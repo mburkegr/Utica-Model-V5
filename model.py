@@ -877,24 +877,33 @@ def build_slot_financials(
     )
 
     # Model-basis assumption:
-    # base_working_interest is the combined USEDC + Granite / GR Parties WI
-    # after Dale's initial 1/16 lease interest. Therefore Dale's initial WI is
-    # grossed up from the GR-side WI. At 6.25%, this is base WI / 15.
+    # base_working_interest is the ORIGINAL WI represented by the slot before
+    # either Dale's initial 1/16 interest or the USEDC-to-Granite carry split.
+    # Dale's initial interest is therefore taken directly from original WI.
     dale_initial_interest_pct = float(
         np.clip(
             deal_settings.get("dale_initial_interest_pct", 0.0625),
             0.0,
-            0.999999,
+            1.0,
         )
     )
-    if dale_promote and dale_initial_interest_pct > 0.0:
+    if dale_promote:
         dale_initial_working_interest = (
-            base_working_interest
-            * dale_initial_interest_pct
-            / (1.0 - dale_initial_interest_pct)
+            base_working_interest * dale_initial_interest_pct
         )
     else:
         dale_initial_working_interest = 0.0
+
+    gr_parties_working_interest = (
+        base_working_interest - dale_initial_working_interest
+    )
+    gr_parties_working_interest = max(
+        0.0,
+        gr_parties_working_interest,
+    )
+    gr_parties_net_wells = (
+        gr_parties_working_interest * gross_wells
+    )
 
     # A checked row represents the first well in that physical unit. Even when
     # the slot contains several gross wells, only one well receives Dale's
@@ -908,7 +917,9 @@ def build_slot_financials(
         dale_initial_working_interest
         * dale_first_well_carry_wells
     )
-    funded_dnc_net_wells = base_net_wells + dale_carry_dnc_net_wells
+    funded_dnc_net_wells = (
+        gr_parties_net_wells + dale_carry_dnc_net_wells
+    )
 
     df["slot_id"] = slot["slot_id"]
     df["tc_name"] = slot["tc_name"]
@@ -917,7 +928,11 @@ def build_slot_financials(
     df["dale_payout_group"] = dale_payout_group
     df["dale_first_well_carry"] = dale_first_well_carry
     df["dale_initial_interest_pct"] = dale_initial_interest_pct
+    df["pre_dale_working_interest"] = base_working_interest
     df["dale_initial_working_interest"] = dale_initial_working_interest
+    df["post_initial_dale_working_interest"] = gr_parties_working_interest
+    df["gr_parties_working_interest"] = gr_parties_working_interest
+    df["gr_parties_net_wells"] = gr_parties_net_wells
     df["dale_first_well_carry_wells"] = dale_first_well_carry_wells
     df["dale_carry_dnc_net_wells"] = dale_carry_dnc_net_wells
     df["funded_dnc_net_wells"] = funded_dnc_net_wells
@@ -934,26 +949,29 @@ def build_slot_financials(
         1.0,
     )
     df["effective_working_interest"] = (
-        base_working_interest * df["ownership_factor"]
+        gr_parties_working_interest * df["ownership_factor"]
     )
     df["effective_net_wells"] = (
-        base_net_wells * df["ownership_factor"]
+        gr_parties_net_wells * df["ownership_factor"]
     )
 
-    # Helpful carry audit fields.
-    df["pre_carry_working_interest"] = base_working_interest
+    # Helpful carry audit fields. The Granite carry is applied only after
+    # Dale's initial interest has first been removed from original WI.
+    df["pre_carry_working_interest"] = gr_parties_working_interest
     df["post_carry_working_interest"] = (
-        base_working_interest * post_carry_ownership_factor
+        gr_parties_working_interest * post_carry_ownership_factor
     )
-    df["pre_carry_effective_nri"] = base_working_interest * lease_nri
+    df["pre_carry_effective_nri"] = (
+        gr_parties_working_interest * lease_nri
+    )
     df["post_carry_effective_nri"] = (
-        base_working_interest
+        gr_parties_working_interest
         * post_carry_ownership_factor
         * lease_nri
     )
-    df["pre_carry_net_wells"] = base_net_wells
+    df["pre_carry_net_wells"] = gr_parties_net_wells
     df["post_carry_net_wells"] = (
-        base_net_wells * post_carry_ownership_factor
+        gr_parties_net_wells * post_carry_ownership_factor
     )
 
     df["slot_gross_oil_production"] = df["gross_oil_production"] * gross_wells
@@ -1006,14 +1024,18 @@ def build_slot_financials(
     )
 
     # Dale payout is intentionally based on positive OCF after LOE and taxes,
-    # but before the USEDC-to-Granite carry split. This represents the combined
-    # USEDC + Granite / GR Parties economic interest.
-    df["slot_promote_ocf"] = df["operating_cf"] * base_net_wells
+    # but before the USEDC-to-Granite carry split. It uses the combined USEDC +
+    # Granite / GR Parties interest after Dale's initial 1/16 has been removed.
+    df["slot_promote_ocf"] = (
+        df["operating_cf"] * gr_parties_net_wells
+    )
 
-    # Base D&C covers the combined USEDC + Granite interest for every well.
-    # Dale's initial 1/16 D&C is added only for the flagged first well in each
-    # physical unit.
-    df["slot_base_capex"] = df["capex"] * base_net_wells
+    # Base D&C covers the combined USEDC + Granite interest for every well
+    # after Dale's initial ownership is removed. Dale's initial 1/16 D&C is
+    # added only for the flagged first well in each physical unit.
+    df["slot_base_capex"] = (
+        df["capex"] * gr_parties_net_wells
+    )
     df["slot_dale_carry_capex"] = (
         df["capex"] * dale_carry_dnc_net_wells
     )
@@ -1859,12 +1881,16 @@ def build_slot_audit_view(all_slots_df):
         "gross_wells",
         "net_wells",
         "working_interest",
+        "pre_dale_working_interest",
         "dale_promote",
         "dale_unit_id",
         "dale_payout_group",
         "dale_first_well_carry",
         "dale_initial_interest_pct",
         "dale_initial_working_interest",
+        "post_initial_dale_working_interest",
+        "gr_parties_working_interest",
+        "gr_parties_net_wells",
         "dale_first_well_carry_wells",
         "dale_carry_dnc_net_wells",
         "funded_dnc_net_wells",
