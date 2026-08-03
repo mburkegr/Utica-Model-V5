@@ -52,7 +52,11 @@ def pretty_column_name(col):
         "dale_payout_group": "Dale Payout Group",
         "dale_first_well_carry": "Dale First-Well Carry",
         "dale_initial_interest_pct": "Dale Initial Interest %",
+        "pre_dale_working_interest": "Original Pre-Dale WI",
         "dale_initial_working_interest": "Dale Initial WI",
+        "post_initial_dale_working_interest": "Post-Initial-Dale WI",
+        "gr_parties_working_interest": "USEDC + Granite WI",
+        "gr_parties_net_wells": "USEDC + Granite Net Wells",
         "dale_carry_dnc_net_wells": "Dale Carry Net Wells",
         "funded_dnc_net_wells": "Funded D&C Net Wells",
         "slot_promote_ocf": "Dale Payout OCF",
@@ -151,8 +155,11 @@ def format_display_df(df):
     
     percent_cols = {
         "working_interest",
+        "pre_dale_working_interest",
         "dale_initial_interest_pct",
         "dale_initial_working_interest",
+        "post_initial_dale_working_interest",
+        "gr_parties_working_interest",
         "pre_carry_working_interest",
         "post_carry_working_interest",
         "pre_promote_working_interest",
@@ -3296,9 +3303,9 @@ st.sidebar.caption(
 )
 
 st.sidebar.caption(
-    "Model basis: slot WI / net acres represent the combined USEDC + Granite "
-    "interest after Dale's initial lease interest. The first-well carry "
-    "grosses Dale's initial WI back up from that GR-side interest."
+    "Model basis: slot WI / net acres represent the original pre-Dale WI. "
+    "Dale's initial interest is deducted first, and the remaining WI is then "
+    "split between USEDC and Granite under the carry arrangement."
 )
 
 dale_promote_override = st.sidebar.checkbox(
@@ -3314,8 +3321,8 @@ dale_initial_interest_pct = st.sidebar.number_input(
     step=0.25,
     format="%.2f",
     help=(
-        "Dale's initial carried lease interest. At 6.25%, the initial Dale WI "
-        "equals the combined USEDC + Granite WI divided by 15."
+        "Dale's initial carried lease interest taken directly from the slot's "
+        "original pre-Dale WI. At 6.25%, Dale receives 6.25% of original WI."
     ),
 )
 
@@ -3518,8 +3525,9 @@ with st.form("slot_inputs_form"):
         "carry_enabled": st.column_config.CheckboxColumn(
             "Carry",
             help=(
-                "USEDC funds D&C at the combined USEDC + Granite WI, then "
-                "Granite receives the entered carried share beginning with production."
+                "After Dale's initial interest is removed, USEDC funds D&C at "
+                "the remaining combined USEDC + Granite WI. Granite then receives "
+                "the entered carried share beginning with production."
             ),
             default=False,
         ),
@@ -3529,7 +3537,10 @@ with st.form("slot_inputs_form"):
             max_value=100.0,
             step=1.0,
             format="%.0f%%",
-            help="Enter 5 for Granite to receive 5% of the combined USEDC + Granite WI.",
+            help=(
+                "Enter 5 for Granite to receive 5% of the WI remaining after "
+                "Dale's initial interest is removed."
+            ),
         ),
         "slot_id": st.column_config.NumberColumn("Slot", format="%d", disabled=True),
         "tc_name": st.column_config.SelectboxColumn("Type Curve", options=tc_names, required=True),
